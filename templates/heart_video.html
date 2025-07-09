@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Rate Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        #video-frame {
+            max-width: 100%;
+            height: auto;
+            margin-top: 20px;
+        }
+        #stats {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Heart Rate Monitor</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+        <input type="file" id="video-upload" name="video" accept="video/*">
+        <button type="submit">Upload Video</button>
+    </form>
+    <div id="stats">
+        <p>R: <span id="r-value">0</span> | G: <span id="g-value">0</span> | B: <span id="b-value">0</span></p>
+        <p>Heart Rate: <span id="heart-rate">Detecting...</span></p>
+    </div>
+    <img id="video-frame" src="" alt="Video Frame">
+    <script>
+        const form = document.getElementById('upload-form');
+        const videoUpload = document.getElementById('video-upload');
+        const videoFrame = document.getElementById('video-frame');
+        const rValue = document.getElementById('r-value');
+        const gValue = document.getElementById('g-value');
+        const bValue = document.getElementById('b-value');
+        const heartRate = document.getElementById('heart-rate');
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('video', videoUpload.files[0]);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                const eventSource = new EventSource(response.url);
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    videoFrame.src = data.frame_url + '?t=' + new Date().getTime();
+                    rValue.textContent = data.rgb.r;
+                    gValue.textContent = data.rgb.g;
+                    bValue.textContent = data.rgb.b;
+                    heartRate.textContent = data.heart_rate ? `${data.heart_rate.toFixed(2)} BPM` : 'Detecting...';
+                };
+                eventSource.onerror = function() {
+                    eventSource.close();
+                };
+            });
+        });
+    </script>
+</body>
+</html>
