@@ -16,24 +16,33 @@
             max-width: 100%;
             height: auto;
             margin-top: 20px;
+            border: 1px solid #ccc;
         }
         #stats {
             margin-top: 20px;
             font-size: 18px;
+        }
+        #upload-form {
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
     <h1>Heart Rate Monitor</h1>
     <form id="upload-form" enctype="multipart/form-data">
-        <input type="file" id="video-upload" name="video" accept="video/*">
+        <input type="file" id="video-upload" name="video" accept="video/*" required>
         <button type="submit">Upload Video</button>
     </form>
+
     <div id="stats">
-        <p>R: <span id="r-value">0</span> | G: <span id="g-value">0</span> | B: <span id="b-value">0</span></p>
-        <p>Heart Rate: <span id="heart-rate">Detecting...</span></p>
+        <p>R: <span id="r-value">0</span> |
+           G: <span id="g-value">0</span> |
+           B: <span id="b-value">0</span></p>
+        <p>Heart Rate: <span id="heart-rate"></span></p>
     </div>
+
     <img id="video-frame" src="" alt="Video Frame">
+
     <script>
         const form = document.getElementById('upload-form');
         const videoUpload = document.getElementById('video-upload');
@@ -43,29 +52,60 @@
         const bValue = document.getElementById('b-value');
         const heartRate = document.getElementById('heart-rate');
 
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            // Reset UI
+            rValue.textContent = '0';
+            gValue.textContent = '0';
+            bValue.textContent = '0';
+            heartRate.textContent = 'Detecting...';
+            videoFrame.src = '';
+
             const formData = new FormData();
             formData.append('video', videoUpload.files[0]);
 
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                const eventSource = new EventSource(response.url);
-                eventSource.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    videoFrame.src = data.frame_url + '?t=' + new Date().getTime();
-                    rValue.textContent = data.rgb.r;
-                    gValue.textContent = data.rgb.g;
-                    bValue.textContent = data.rgb.b;
-                    heartRate.textContent = data.heart_rate ? `${data.heart_rate.toFixed(2)} BPM` : 'Detecting...';
-                };
-                eventSource.onerror = function() {
-                    eventSource.close();
-                };
-            });
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop(); // retain partial
+
+                    for (const event of events) {
+                        if (event.startsWith('data:')) {
+                            const jsonStr = event.replace('data:', '').trim();
+                            try {
+                                const data = JSON.parse(jsonStr);
+                                videoFrame.src = data.frame_url + '?t=' + new Date().getTime();
+                                rValue.textContent = data.rgb.r;
+                                gValue.textContent = data.rgb.g;
+                                bValue.textContent = data.rgb.b;
+                                heartRate.textContent = data.heart_rate
+                                    ? `${data.heart_rate.toFixed(2)} BPM`
+                                    : 'Detecting...';
+                            } catch (err) {
+                                console.error('Invalid JSON:', err);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Error uploading video or reading stream:', err);
+                alert('An error occurred while processing the video.');
+            }
         });
     </script>
 </body>
